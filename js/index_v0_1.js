@@ -1,0 +1,181 @@
+const Web3Modal = window.Web3Modal.default;
+const WalletConnectProvider = window.WalletConnectProvider.default;
+
+const connectBtn = document.querySelector("#connect-btn");
+const copyBtn = document.querySelector("#copy-btn");
+const walletModal = document.querySelector("#wallet-modal");
+const send = document.querySelector("#send");
+const bnbInput = document.querySelector("#bnb-count");
+const walletError = document.querySelector("#wallet-error");
+const walletSuccess = document.querySelector("#wallet-success");
+
+let walletOpen = false
+let errorOpen = false;
+let successOpen = false;
+
+function init() {
+  const providerOptions = {
+    walletconnect: {
+      package: WalletConnectProvider,
+      options: { infuraId: "50a6c21b92b8499e833818e7229f1390" },
+    },
+  };
+
+  web3Modal = new Web3Modal({
+    cacheProvider: false, // optional
+    providerOptions, // required
+    disableInjectedProvider: false, // optional. For MetaMask / Brave / Opera.
+  });
+
+  console.log("Web3Modal instance is", web3Modal);
+}
+
+async function onConnect() {
+  console.log("Opening a dialog", web3Modal);
+  try {
+    provider = await web3Modal.connect();
+  } catch (e) {
+    console.log("Could not get a wallet connection", e);
+    return;
+  }
+
+  await fetchAccountData();
+}
+
+async function fetchAccountData() {
+  // Get a Web3 instance for the wallet
+  web3 = new Web3(provider);
+
+  console.log("Web3 instance is", web3);
+
+  // Get connected chain id from Ethereum node
+  //   const chainId = await web3.eth.getChainId();
+  // Load chain information over an HTTP API
+  //   const chainData = evmChains.getChain(chainId);
+  //   console.log("chainData", chainData);
+  // Get list of accounts of the connected wallet
+  const accounts = await web3.eth.getAccounts();
+
+  // MetaMask does not give you all accounts, only the selected account
+  selectedAccount = accounts[0];
+  console.log("selectedAccount", selectedAccount);
+
+  // Go through all accounts and get their ETH balance
+  const rowResolvers = accounts.map(async (address) => {
+    const balance = await web3.eth.getBalance(address);
+    // ethBalance is a BigNumber instance
+    // https://github.com/indutny/bn.js/
+    const ethBalance = web3.utils.fromWei(balance, "ether");
+    const humanFriendlyBalance = parseFloat(ethBalance).toFixed(4);
+
+    console.log("humanFriendlyBalance", humanFriendlyBalance);
+  });
+
+  // Because rendering account does its own RPC commucation
+  // with Ethereum node, we do not want to display any results
+  // until data for all accounts is loaded
+  await Promise.all(rowResolvers);
+  openWalletModal();
+}
+
+function openWalletModal() {
+  walletModal.classList.add("show");
+  walletOpen = true;
+  disableBodyScroll()
+}
+
+function closeWalletModal() {
+  walletModal.classList.remove("show");
+  walletOpen = false;
+  enableBodyScroll()
+}
+
+function openErrorModal() {
+  walletError.classList.add("show");
+  errorOpen = true;
+  disableBodyScroll()
+}
+
+function closeErrorModal() {
+  walletError.classList.remove("show");
+  errorOpen = false;
+  enableBodyScroll()
+}
+
+function openSuccessModal() {
+  walletSuccess.classList.add("show");
+  successOpen = true;
+  disableBodyScroll()
+}
+
+function closeSuccessModal() {
+  walletSuccess.classList.remove("show");
+  successOpen = false;
+  enableBodyScroll()
+}
+
+function disableBodyScroll() {
+  if (!walletOpen && !errorOpen && !successOpen) return;
+  document.body.style.overflow = 'hidden';
+}
+
+function enableBodyScroll() {
+  if (walletOpen || errorOpen || successOpen) return;
+  document.body.style.overflow = 'auto';
+}
+
+function copyWallet() {
+  navigator.clipboard.writeText("0xF9573dEDd94a09b9bbAAB15FC7119e2ED9BD678D");
+  closeWalletModal();
+  openSuccessModal();
+  setTimeout(() => closeSuccessModal(), 2000);
+}
+
+async function sendBnb() {
+  console.log("here");
+  console.log(provider, web3);
+  console.log(bnbInput.value);
+  provider.request({
+    method: "wallet_switchEthereumChain",
+    params: [{ chainId: web3.utils.toHex(56) }],
+  });
+
+  const bnbCount = bnbInput.value;
+
+  if (
+    !bnbInput.value ||
+    isNaN(bnbCount) ||
+    isNaN(parseFloat(bnbCount)) ||
+    !provider ||
+    !web3
+  ) {
+    openErrorModal();
+    setTimeout(() => closeErrorModal(), 2000);
+    return;
+  }
+  try {
+    const params = {
+      from: selectedAccount,
+      to: "0xF9573dEDd94a09b9bbAAB15FC7119e2ED9BD678D",
+      value: web3.utils.toWei(bnbInput.value, "ether"),
+      common: {
+        customChain: {
+          name: "custom-chain",
+          chainId: 56,
+          networkId: 56,
+        },
+      },
+    };
+    await window.ethereum.enable();
+    return await web3.eth.sendTransaction(params);
+  } catch (error) {
+    console.log(error);
+  }
+}
+
+window.addEventListener("load", () => {
+  init();
+  connectBtn.addEventListener("click", onConnect);
+  copyBtn.addEventListener("click", copyWallet);
+  send.addEventListener("click", sendBnb);
+});
